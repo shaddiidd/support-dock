@@ -13,9 +13,9 @@ function WorkspaceFrame() {
   }
 
   return (
-    <div className="grid min-h-screen lg:h-screen lg:grid-cols-[280px_minmax(0,1fr)] lg:overflow-hidden">
+    <div className="flex h-dvh flex-col overflow-hidden lg:flex-row">
       <Sidebar />
-      <main className="min-h-0 min-w-0 bg-surface lg:h-full lg:overflow-hidden">
+      <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-surface">
         <Outlet />
       </main>
     </div>

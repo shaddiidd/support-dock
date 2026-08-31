@@ -31,7 +31,7 @@ export function Dialog({ open, title, description, onClose, children, wide = fal
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 grid place-items-center p-4">
+    <div className="fixed inset-0 z-50 grid items-end p-0 sm:place-items-center sm:p-4">
       <button
         type="button"
         className="absolute inset-0 bg-harbor-deep/50"
@@ -44,8 +44,8 @@ export function Dialog({ open, title, description, onClose, children, wide = fal
         aria-labelledby="dialog-title"
         className={
           wide
-            ? "relative z-10 max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-line bg-surface p-6 shadow-card"
-            : "relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-surface p-6 shadow-card"
+            ? "relative z-10 max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-line bg-surface p-5 shadow-card sm:max-h-[90vh] sm:max-w-2xl sm:rounded-2xl sm:p-6"
+            : "relative z-10 max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-line bg-surface p-5 shadow-card sm:max-h-[90vh] sm:max-w-lg sm:rounded-2xl sm:p-6"
         }
       >
         <div className="mb-5 flex items-start justify-between gap-4">

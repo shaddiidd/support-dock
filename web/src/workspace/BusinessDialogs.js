@@ -227,11 +227,11 @@ function DeleteBusinessDialog({ open, business, onClose }) {
       onClose={onClose}
     >
       {error ? <Alert>{error}</Alert> : null}
-      <div className="mt-2 flex flex-wrap justify-end gap-3">
-        <Button type="button" variant="quiet" onClick={onClose}>
+      <div className="mt-2 flex flex-col-reverse gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
+        <Button type="button" variant="quiet" className="w-full sm:w-auto" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="button" variant="danger" onClick={handleDelete} disabled={submitting}>
+        <Button type="button" variant="danger" className="w-full sm:w-auto" onClick={handleDelete} disabled={submitting}>
           {submitting ? "Deleting…" : "Delete business"}
         </Button>
       </div>
@@ -309,11 +309,11 @@ function BusinessForm({
         maxLength={40}
         hint="Shared with customers who ask for a phone number."
       />
-      <div className="flex flex-wrap justify-end gap-3">
-        <Button type="button" variant="quiet" onClick={onCancel}>
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
+        <Button type="button" variant="quiet" className="w-full sm:w-auto" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit" disabled={submitting}>
+        <Button type="submit" className="w-full sm:w-auto" disabled={submitting}>
           {submitting ? "Saving…" : submitLabel}
         </Button>
       </div>

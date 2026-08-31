@@ -200,7 +200,7 @@ export function KnowledgeBasePage({ business }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-line px-6 py-4">
+      <header className="flex shrink-0 flex-col gap-3 border-b border-line px-4 py-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-4 sm:px-6">
         <div className="min-w-0">
           <h2 className="text-lg font-bold">Knowledge base</h2>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
@@ -210,7 +210,7 @@ export function KnowledgeBasePage({ business }) {
         </div>
           <Button
             type="button"
-            className="shrink-0 py-2.5"
+            className="w-full py-2.5 sm:w-auto sm:shrink-0"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
           >
@@ -237,7 +237,7 @@ export function KnowledgeBasePage({ business }) {
           />
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
           <div className="grid gap-3">
             {error ? <Alert>{error}</Alert> : null}
             {notice ? <Alert tone="success">{notice}</Alert> : null}
@@ -252,7 +252,7 @@ export function KnowledgeBasePage({ business }) {
             {loading ? (
               <p className="text-muted">Loading documents…</p>
             ) : documents.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-line px-6 py-16 text-center">
+              <div className="rounded-2xl border border-dashed border-line px-4 py-12 text-center sm:px-6 sm:py-16">
                 <HiOutlineDocumentText className="mx-auto h-8 w-8 text-muted" />
                 <p className="mt-3 font-semibold">No documents yet</p>
                 <p className="mt-1 text-sm text-muted">
@@ -287,13 +287,14 @@ export function KnowledgeBasePage({ business }) {
           }
           onClose={() => setPendingDelete(null)}
         >
-          <div className="mt-2 flex flex-wrap justify-end gap-3">
-            <Button type="button" variant="quiet" onClick={() => setPendingDelete(null)}>
+          <div className="mt-2 flex flex-col-reverse gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
+            <Button type="button" variant="quiet" className="w-full sm:w-auto" onClick={() => setPendingDelete(null)}>
               Cancel
             </Button>
             <Button
               type="button"
               variant="danger"
+              className="w-full sm:w-auto"
               onClick={confirmDelete}
               disabled={Boolean(busyId)}
             >
@@ -321,16 +322,18 @@ export function KnowledgeBasePage({ business }) {
                 ? `Selected file: ${replaceFile.name}`
                 : "Choose a PDF, Word, Markdown, HTML, or text file."}
             </p>
-            <div className="flex flex-wrap justify-end gap-3">
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
               <Button
                 type="button"
                 variant="quiet"
+                className="w-full sm:w-auto"
                 onClick={() => replaceInputRef.current?.click()}
               >
                 Choose file
               </Button>
               <Button
                 type="button"
+                className="w-full sm:w-auto"
                 onClick={confirmReplace}
                 disabled={!replaceFile || Boolean(busyId)}
               >
@@ -350,10 +353,10 @@ function DocumentCard({ document, busy, onReplace, onDelete, onRetry, onDownload
 
   return (
     <li className="py-3.5">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate font-semibold">{document.filename}</p>
+            <p className="min-w-0 break-all font-semibold">{document.filename}</p>
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
                 STATUS_STYLES[document.status] || STATUS_STYLES.uploaded
@@ -374,7 +377,7 @@ function DocumentCard({ document, busy, onReplace, onDelete, onRetry, onDownload
             <p className="mt-2 text-sm text-red-800">{document.error_message}</p>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 sm:shrink-0 sm:justify-end">
           <Button type="button" variant="quiet" className="px-3 py-2" onClick={onDownload}>
             <span className="inline-flex items-center gap-1.5">
               <HiOutlineArrowDownTray className="h-4 w-4" />

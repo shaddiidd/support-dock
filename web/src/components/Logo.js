@@ -5,7 +5,7 @@ import { cn } from "./ui";
 const sizes = {
   sm: "h-8 w-8 rounded-lg",
   md: "h-10 w-10 rounded-xl",
-  lg: "h-16 w-16 rounded-2xl",
+  lg: "h-12 w-12 rounded-2xl sm:h-16 sm:w-16",
 };
 
 export function Logo({ size = "md", className }) {

@@ -14,15 +14,15 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="px-6 py-8">
+    <div className="h-full overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
       <Panel>
         <Eyebrow>Get started</Eyebrow>
-        <h1 className="text-3xl font-bold">Create your first business.</h1>
+        <h1 className="text-2xl font-bold sm:text-3xl">Create your first business.</h1>
         <p className="mb-6 mt-2 leading-relaxed text-muted">
           Each business is its own workspace. Switch between them from the
           sidebar whenever you like.
         </p>
-        <Button type="button" onClick={openCreate}>
+        <Button type="button" className="w-full sm:w-auto" onClick={openCreate}>
           New business
         </Button>
       </Panel>

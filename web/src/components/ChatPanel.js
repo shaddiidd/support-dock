@@ -105,8 +105,8 @@ export function ChatPanel({ business, onTicketCreated }) {
   }
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col">
-      <header className="shrink-0 border-b border-line px-6 py-4">
+    <div className="mx-auto flex h-full min-h-0 w-full min-w-0 max-w-3xl flex-col">
+      <header className="shrink-0 border-b border-line px-4 py-4 sm:px-6">
         <Eyebrow className="mb-1">Testing only</Eyebrow>
         <h2 className="text-lg font-bold">Try the {business.name} assistant</h2>
         <p className="mt-1 text-sm leading-relaxed text-muted">
@@ -115,7 +115,7 @@ export function ChatPanel({ business, onTicketCreated }) {
         </p>
       </header>
 
-      <div ref={listRef} className="grid min-h-0 flex-1 content-start gap-3 overflow-auto px-6 py-4">
+      <div ref={listRef} className="grid min-h-0 flex-1 content-start gap-3 overflow-auto px-4 py-4 sm:px-6">
         {messages.map((item, index) => (
           <ChatBubble key={`${item.role}-${index}`} message={item} />
         ))}
@@ -133,7 +133,7 @@ export function ChatPanel({ business, onTicketCreated }) {
         ) : null}
       </div>
 
-      <form className="shrink-0 border-t border-line p-4" onSubmit={handleSubmit}>
+      <form className="shrink-0 border-t border-line p-4 pb-[max(1rem,env(safe-area-inset-bottom))]" onSubmit={handleSubmit}>
         {error ? <p className="mb-3 text-sm text-red-800">{error}</p> : null}
         {closed ? (
           <Button type="button" className="w-full py-2.5" onClick={startNewConversation}>
@@ -146,7 +146,7 @@ export function ChatPanel({ business, onTicketCreated }) {
             </label>
             <textarea
               id="chat-message"
-              className="mb-3 h-24 w-full resize-none rounded-xl border border-line bg-paper px-3.5 py-3 text-sm outline-none focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-harbor"
+              className="mb-3 h-20 w-full resize-none rounded-xl border border-line bg-paper px-3.5 py-3 text-sm outline-none focus:outline focus:outline-2 focus:outline-offset-1 focus:outline-harbor sm:h-24"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onKeyDown}
@@ -169,7 +169,7 @@ export function ChatPanel({ business, onTicketCreated }) {
 function ChatBubble({ message }) {
   const isUser = message.role === "user";
   return (
-    <div className={cn("max-w-[92%]", isUser ? "ml-auto" : "")}>
+    <div className={cn("max-w-[min(92%,36rem)] break-words", isUser ? "ml-auto" : "")}>
       <div
         className={cn(
           "rounded-2xl px-3.5 py-3 text-sm leading-relaxed",
@@ -181,7 +181,7 @@ function ChatBubble({ message }) {
         )}
       >
         {isUser ? (
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
         ) : (
           <MarkdownBody content={message.content} />
         )}

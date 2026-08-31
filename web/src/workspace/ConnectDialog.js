@@ -46,6 +46,7 @@ export function ConnectDialog({ open, business, onClose }) {
           <div className="flex justify-end">
             <Button
               type="button"
+              className="w-full sm:w-auto"
               onClick={() => {
                 onClose();
                 openEdit(business);

@@ -73,7 +73,7 @@ export function Panel({ children, className }) {
   return (
     <section
       className={cn(
-        "w-full max-w-xl rounded-[18px] border border-line bg-surface p-8 shadow-card",
+        "w-full max-w-xl rounded-[18px] border border-line bg-surface p-5 shadow-card sm:p-8",
         className
       )}
     >

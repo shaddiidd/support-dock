@@ -39,7 +39,7 @@ export function AssistantPage({ business }) {
   }
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto px-6 py-6">
+    <div className="h-full min-h-0 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6">
       <form className="mx-auto grid max-w-3xl gap-4" onSubmit={handleSubmit}>
         <div>
           <Eyebrow className="mb-1 text-muted">Assistant</Eyebrow>
@@ -64,8 +64,8 @@ export function AssistantPage({ business }) {
           rows={12}
           hint={`${draft.trim().length} / 4000`}
         />
-        <div className="flex justify-end">
-          <Button type="submit" disabled={saving || !dirty}>
+        <div className="flex sm:justify-end">
+          <Button type="submit" className="w-full sm:w-auto" disabled={saving || !dirty}>
             {saving ? "Saving…" : "Save instructions"}
           </Button>
         </div>

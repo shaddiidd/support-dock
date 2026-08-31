@@ -67,14 +67,14 @@ function WorkspaceView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface">
-      <header className="shrink-0 border-b border-line px-6 pt-5">
+      <header className="shrink-0 border-b border-line px-4 pt-4 sm:px-6 sm:pt-5">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-muted">
               Workspace
             </p>
-            <h1 className="mt-1 truncate text-2xl font-bold">{business.name}</h1>
-            <p className="mt-1 text-sm text-muted">
+            <h1 className="mt-1 truncate text-xl font-bold sm:text-2xl">{business.name}</h1>
+            <p className="mt-1 line-clamp-2 text-sm text-muted">
               {[
                 business.website_origin || business.website_url,
                 business.contact_phone,
@@ -87,16 +87,19 @@ function WorkspaceView() {
           <Button
             type="button"
             variant="quiet"
-            className="shrink-0 py-2.5"
+            className="w-full py-2.5 sm:w-auto sm:shrink-0"
             onClick={() => setConnectOpen(true)}
           >
-            <span className="inline-flex items-center gap-2">
+            <span className="inline-flex items-center justify-center gap-2">
               <HiOutlineLink className="h-4 w-4" />
               Connect
             </span>
           </Button>
         </div>
-        <nav className="-mb-px flex gap-1" aria-label="Workspace sections">
+        <nav
+          className="-mb-px flex gap-1 overflow-x-auto overscroll-x-contain pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          aria-label="Workspace sections"
+        >
           {TABS.map((item) => {
             const Icon = item.icon;
             return (
@@ -110,7 +113,7 @@ function WorkspaceView() {
                 end={item.id !== "tickets"}
                 className={({ isActive }) =>
                   cn(
-                    "inline-flex items-center gap-2 rounded-t-xl px-4 py-2.5 text-sm font-semibold no-underline",
+                    "inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-t-xl px-3 py-2.5 text-sm font-semibold no-underline sm:px-4",
                     isActive
                       ? "bg-paper text-ink"
                       : "text-muted hover:bg-paper/60 hover:text-ink"

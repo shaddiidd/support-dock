@@ -1,208 +1,207 @@
-# Support Dock
+# How the backend works
 
-A multi-tenant AI support platform. Businesses upload help docs, get a grounded assistant that only answers from those docs, embed it on their own website, and receive a ticket when a human needs to take over.
+Support Dock’s API is a FastAPI app. Every important path is: **accept a request → load the right business → do work in services → talk to Postgres, S3, Pinecone, OpenAI, or Resend**.
 
-This repo is a full-stack portfolio project: React dashboard, FastAPI backend, Postgres, S3, Pinecone, and OpenAI.
+There are two public surfaces:
 
-## What it does
+- Authenticated routes under `/api/v1/…` — JWT required, scoped to businesses the user owns.
+- Widget chat at `/api/v1/widget/{business_id}/chat` — no JWT. The browser `Origin` must match that business’s saved website origin.
 
-An owner signs up, creates a **business workspace**, and uploads PDFs, Word, Markdown, HTML, or text. Those files are extracted, chunked, embedded, and indexed. Customers (or the owner, in a test chat) ask questions. The assistant retrieves relevant passages, answers only from that context plus a short business profile, and refuses everything else.
+Both chat routes call the same function: `answer_question`.
 
-If the issue needs a person — payments, bugs, refunds, account access, an explicit ask for a human — the assistant collects the customer’s email, opens a ticket, emails the support inbox, and closes that conversation.
+---
 
-The public chat is **origin-locked**. Each business stores one website origin. The widget endpoint accepts requests only from that origin, and that origin cannot talk to another business.
+## 1. A request hits the API
 
-## Architecture
+`create_app()` mounts CORS, then the v1 router.
 
-```mermaid
-flowchart LR
-  subgraph clients [Clients]
-    Dash[Dashboard React]
-    Site[Customer website]
-  end
-
-  API[FastAPI /api/v1]
-
-  subgraph data [Data]
-    PG[(Postgres)]
-    S3[(S3 originals)]
-    PC[(Pinecone namespaces)]
-  end
-
-  subgraph models [Models]
-    Emb[Embeddings]
-    Chat[Chat completions]
-    Tr[Query translation]
-  end
-
-  Mail[Resend]
-
-  Dash -->|JWT| API
-  Site -->|Origin-checked widget| API
-  API --> PG
-  API --> S3
-  API --> PC
-  API --> Emb
-  API --> Chat
-  API --> Tr
-  API --> Mail
+```
+Request
+  → OriginAwareCORSMiddleware
+  → route + dependencies (DB session, auth or widget origin)
+  → endpoint
+  → service
 ```
 
-| Layer | Role |
+**CORS is path-aware.** Dashboard origins from `CORS_ORIGINS` are allowed on the whole API. Widget chat is different: the middleware extracts `business_id` from `/api/v1/widget/{id}/chat`, loads that business, and only reflects `Access-Control-Allow-Origin` if the request origin equals `business.website_origin`. Anything else gets a failed preflight.
+
+On startup the app creates tables if needed and runs a few `ALTER TABLE … IF NOT EXISTS` statements so older databases pick up new columns.
+
+---
+
+## 2. Auth
+
+`POST /api/v1/auth/register` and `/login` hash passwords with bcrypt and return a JWT (`sub` = user id). Protected routes use `HTTPBearer` → `decode_access_token` → load the user.
+
+Business-scoped routes don’t just take a UUID from the URL. They go through `get_owned_business`: load the business **where `id` matches and `owner_id` is the current user**. Wrong owner looks like a 404, not a 403, so you can’t probe other tenants.
+
+The widget does not use this. It uses `get_widget_business`: load by id, then require `Origin` to match `website_origin`. Mismatch is 403.
+
+A website origin is unique across all businesses. Saving a URL stores both the full URL and `scheme://host` so CORS and the widget check compare origins, not paths.
+
+---
+
+## 3. Document flow: file → searchable chunks
+
+`POST /api/v1/businesses/{id}/documents` is the start of indexing.
+
+```mermaid
+sequenceDiagram
+  participant API
+  participant PG as Postgres
+  participant S3
+  participant Job as Background job
+  participant OA as OpenAI
+  participant PC as Pinecone
+
+  API->>API: Validate type and size (≤ 20 MB)
+  API->>PG: Insert document (status uploaded)
+  API->>S3: Put original bytes
+  API-->>Job: process_document_job
+  Note over API: HTTP returns immediately
+
+  Job->>S3: Download
+  Job->>Job: Extract text
+  Job->>PG: state = extracting → chunking
+  Job->>Job: Split into heading-aware chunks
+  Job->>OA: Embed chunk texts
+  Job->>PG: state = embedding → indexing
+  Job->>PC: Delete old vectors for this document
+  Job->>PC: Upsert new vectors in business namespace
+  Job->>PG: status = ready, languages, chunk count
+```
+
+### Upload
+
+1. Reject unsupported extensions and empty/oversized files.
+2. Insert a `documents` row (filename, title, content type, size). `s3_key` is filled after the object lands.
+3. Write the object to `businesses/{business_id}/documents/{document_id}/{random}_{filename}`.
+4. Queue `process_document_job` on FastAPI `BackgroundTasks`. The client gets the document record while status is still `uploaded` / `queued`.
+
+If S3 fails, the row is deleted so you don’t leave a document with no file.
+
+### Processing (`process_document`)
+
+The job opens its own DB session and walks explicit states so a poller can see where it is.
+
+| State | What happens |
 | --- | --- |
-| `web/` | Create React App dashboard: auth, workspaces, documents, tickets, assistant instructions, test chat, embed snippet |
-| `api/` | FastAPI app: auth, businesses, document pipeline, RAG chat, widget, tickets |
-| Postgres | Users, businesses, document metadata, tickets |
-| S3 | Private original files; downloads use short-lived presigned URLs |
-| Pinecone | One serverless index; **one namespace per business** |
-| OpenAI | Embeddings, grounded JSON answers, optional query translation |
-| Resend | Ticket email to the business support address |
+| extracting | Download from S3. Parse PDF / DOCX / HTML / plain text. Strip nav, scripts, page numbers, repeated headers. |
+| chunking | Split on markdown headings, FAQ Q/A, numbered steps. Pack ~300–500 words with ~65-word overlap. Prefix each chunk with document title and section path. Detect language per chunk. |
+| embedding | Batch texts through OpenAI (`text-embedding-3-small`, 512 dims). |
+| indexing | Delete any previous vectors for this `document_id`. Upsert into Pinecone **namespace = business UUID**. Vector id is `{document_id}:{chunk_order}`. Metadata: `business_id`, `document_id`, title, heading, language, chunk text (capped). |
+| ready | Store chunk count, majority language, and the set of chunk languages. Those languages roll up onto the business as `knowledge_languages`. |
 
-## How a document becomes searchable
+Any stage can fail (`extraction_failed`, `embedding_failed`, `indexing_failed`, …). The row stays; the owner can reindex.
 
-Upload is authenticated and scoped to a business the current user owns. Max size is 20 MB. Supported types: `.pdf`, `.docx`, `.md`, `.html`, `.txt`.
+### Replace, reindex, delete
 
-1. **Store.** The raw file is written to S3 under `businesses/{business_id}/documents/{document_id}/…`. Postgres stores filename, status, and processing state.
-2. **Extract.** Text is pulled from PDF, Word, HTML, or plain files. HTML drops nav/script/style; PDFs drop running headers and page numbers.
-3. **Chunk.** The text is split on headings, FAQ pairs, and numbered steps, then packed into overlapping ~300–500 word chunks. Each chunk is prefixed with document title and section path so retrieval keeps that context.
-4. **Language.** Each chunk is language-detected. The document records a majority language plus the set of languages present. Those roll up to the business as `knowledge_languages`.
-5. **Embed.** Chunks go through OpenAI embeddings (`text-embedding-3-small`, 512 dimensions).
-6. **Index.** Vectors are upserted into the business’s Pinecone namespace. Metadata includes `business_id`, `document_id`, title, heading path, language, and the chunk text.
+- **Replace** uploads a new object, purges old S3 + vectors, then runs the same job.
+- **Reindex** re-runs the job on the existing S3 object (useful after a failed index).
+- **Delete** removes vectors and the S3 object, then deletes leftover vectors in that namespace whose `document_id` is no longer in Postgres.
 
-Processing runs as a FastAPI background task with explicit states: queued → extracting → chunking → embedding → indexing → ready (or failed with a code). Replace and reindex delete old vectors first. Delete also purges S3 and leftover vectors for that document.
+Deleting a **business** wipes the S3 prefix `businesses/{id}/` and `delete_all` on that Pinecone namespace.
 
-## How a question is answered
+---
 
-Dashboard chat and the public widget share the same `answer_question` path. The difference is **who is allowed to call it**.
+## 4. Chat flow: question → retrieve → JSON decision → reply or ticket
+
+Two entry points, one pipeline:
+
+| Route | Gate |
+| --- | --- |
+| `POST /api/v1/businesses/{id}/chat` | JWT + owner |
+| `POST /api/v1/widget/{id}/chat` | `Origin` == `website_origin` |
+
+Body: `message`, optional `history` (last turns), optional `conversation_id`.
+
+Then `answer_question`:
 
 ```mermaid
 flowchart TD
-  Msg[Incoming message] --> Closed{Ticket already open for this conversation?}
-  Closed -->|yes| Stop[Return closed reply]
-  Closed -->|no| Talk{Greeting / thanks / goodbye?}
-  Talk -->|yes| Small[Canned small talk]
-  Talk -->|no| Retr[Retrieve chunks]
-  Retr --> LLM[JSON completion]
-  LLM --> Kind{type}
-  Kind -->|answer| Reply[Grounded reply + sources]
-  Kind -->|follow_up| Ask[One clarifying question]
-  Kind -->|escalate| Ticket[Open ticket, email support, close chat]
-  Kind -->|refuse| No[Refuse: only this business]
+  In[message + history + conversation_id] --> Lang[Detect customer language]
+  Lang --> Open{Ticket already exists for this conversation?}
+  Open -->|yes| Closed[Return closed reply + ticket number. Stop]
+  Open -->|no| Hi{Regex: hi / thanks / bye?}
+  Hi -->|yes| Small[Canned greeting. No retrieval]
+  Hi -->|no| Contact[Parse email/phone from history + this message]
+  Contact --> Retr[Retrieve]
+  Retr --> LLM[Chat completion, JSON object]
+  LLM --> Guard{Server-side checks}
+  Guard -->|small_talk / follow_up| Out[Return reply]
+  Guard -->|answer + useful context| Src[Return reply + source titles]
+  Guard -->|escalate, no email| Ask[Ask for email]
+  Guard -->|escalate + email| Ticket[Insert ticket, email support, close chat]
+  Guard -->|else| Refuse[Refuse: only this business]
 ```
 
-**Retrieval**
+History is **not** treated as a knowledge source. It is only used for: continuing a conversation id, extracting contact details, and giving the model prior turns so follow-ups make sense.
 
-- Only documents with status `ready` are searchable.
-- The query is embedded and searched in that business’s namespace, with a metadata filter on `business_id` and live `document_id`s.
-- Hits below a minimum cosine score are dropped. Weak top scores, or a language mismatch between the customer and the knowledge base, trigger **query translation** into the document languages and a second search. Results are merged and de-duplicated.
+### Retrieval
 
-**Generation**
+1. Collect ids of documents with `status = ready`. If none, retrieval is empty.
+2. Search text is the current message, or `previous user message + current` so short follow-ups (“what about refunds?”) still retrieve.
+3. Embed that query. Query Pinecone in **this business’s namespace only**, `top_k = 8`, metadata filter `{ business_id, document_id ∈ live ids }`.
+4. Drop hits below `chat_min_score`, wrong `business_id`, unknown `document_id`, or empty text.
+5. If the best remaining score is below `chat_strong_score`, **or** the customer’s language is not in `knowledge_languages`, translate the query into each knowledge language and search again.
+6. Merge by vector id (keep the higher score), take the top 6.
 
-The model returns a JSON object (`small_talk` | `answer` | `follow_up` | `escalate` | `refuse`). The system prompt is strict:
+So a question in Arabic against English docs can still hit: detect `ar` → weak/mismatch → translate query to English → search → same chunks.
 
-- Answer only from retrieved excerpts and the business profile (name, description, public email, phone, website).
-- Reply in the customer’s detected language.
-- Do not use world knowledge, invent policies, or treat chat history as a source of facts.
-- Owner-written assistant instructions can set tone and escalation preference; they cannot invent facts or override those rules.
+### Generation
 
-If the model says `answer` but there were no useful excerpts (and the question is not a contact/profile question), the API refuses. Sources returned to the dashboard are document title plus heading, not raw chunk text.
+`_complete` builds a system prompt that:
 
-## Widget isolation
+- Names the business
+- Forces the reply language to the detected customer language
+- Allows greetings, answers from excerpts + business profile only, one follow-up, and escalation when a human must act
+- Forbids world knowledge, invented policies/prices/contact details, and using earlier turns as facts
+- Attaches owner `assistant_instructions` as extra tone/rules that **cannot** invent facts or override the constraints
 
-The embed is a `fetch` to:
+The user message to the model is: business profile + numbered excerpts (or “none”) + the latest customer text. `response_format` is JSON.
 
-`POST /api/v1/widget/{business_id}/chat`
+The model must return:
 
-There is no widget API key. Two checks have to agree:
-
-1. **CORS middleware** allows dashboard origins on the whole API. For widget chat, it allows only that business’s saved `website_origin`.
-2. **Route dependency** reads the `Origin` header again and 403s unless it matches. One website origin is unique across businesses.
-
-Browsers set `Origin` and pages cannot override it from JavaScript, which is the intended threat model: a snippet copied onto site A cannot be reused on site B, and site A cannot query another tenant’s knowledge base.
-
-The authenticated dashboard chat is a separate route (`/businesses/{id}/chat`) and requires a JWT for the owner.
-
-## Tickets and escalation
-
-Escalation is for actions a document cannot complete (payment failure, bugs, refunds, access, security, “talk to a person”). The assistant must already have a **customer email** from the thread; phone is optional. Business contact details are ignored so the model cannot treat the company inbox as the customer.
-
-Opening a ticket:
-
-- Stores title, summary, category, priority, internal reason, transcript, and contact info
-- Assigns a `T-XXXXXXXX` number
-- Enforces one ticket per `(business_id, conversation_id)`
-- Emails the business `support_email` via Resend when mail is configured
-- Sets `chat_closed` so further messages in that conversation only return the ticket number
-
-Owners inspect tickets in the dashboard. The widget never sees internal reason or the support inbox.
-
-## Data model (Postgres)
-
-```
-User 1──* Business 1──* Document
-                 └──* Ticket
+```json
+{
+  "type": "small_talk | answer | follow_up | escalate | refuse",
+  "reply": "…",
+  "ticket": { "title", "summary", "category", "priority", "internal_reason" }
+}
 ```
 
-- **User** — email, bcrypt password hash
-- **Business** — profile, public contact details, support inbox, website URL + origin, optional assistant instructions, knowledge languages
-- **Document** — file metadata, S3 key, processing status, chunk count, languages
-- **Ticket** — conversation id, customer contact, transcript JSON, email send status
+`ticket` is only used when `type` is `escalate`.
 
-Dashboard sessions are JWTs (HS256) in `localStorage`. Protected routes call `/auth/me` on load.
+### Server-side enforcement
 
-## Isolation and security (design)
+The API does not trust `type` blindly:
 
-| Concern | Approach |
-| --- | --- |
-| Tenant data | Owner-scoped queries for dashboard routes; widget is origin-scoped |
-| Vector leak across tenants | Pinecone namespace = business id, plus metadata filters on `business_id` and live document ids |
-| Original files | Private S3 objects; short-lived presigned GET for the owner |
-| Public chat abuse | Origin allowlist, no widget secret, conversation closes after a ticket |
-| Grounding | Refuse when retrieval is empty; JSON contract; no general-knowledge answers |
-| Secrets | Loaded from environment / `api/.env`; that file is gitignored |
+- `answer` is accepted only if retrieval returned chunks, **or** the user asked for contact/about info and the business profile has something to say. Otherwise it becomes a refuse.
+- If the last assistant message asked for an email and this message contains one, kind is forced to `escalate` even if the model said something else.
+- `escalate` without a customer email does not open a ticket; it asks for an email (and optional phone). Business `contact_email` / `support_email` / `contact_phone` are stripped out of the parsed contact fields so the company inbox cannot be treated as the customer.
+- Anything else (empty reply, `refuse`, answer with no context) returns the refuse template.
 
-Copy `api/.env.example` locally. Never commit real keys, database URLs, or JWT secrets.
+---
 
-## Repository layout
+## 5. Ticket flow
 
-```
-api/
-  app/
-    api/v1/endpoints/   auth, businesses, documents, chat, widget, tickets
-    core/               settings, JWT, origin-aware CORS
-    models/             SQLAlchemy
-    schemas/            Pydantic
-    services/           extraction, chunking, embeddings, Pinecone, RAG, mail
-  .env.example
-web/
-  src/
-    pages/              dashboard, workspace tabs
-    workspace/          business context, connect/embed dialog
-    api/                HTTP client
-```
+`_open_ticket` runs only after the checks above.
 
-## Local development
+1. Re-check uniqueness: one ticket per `(business_id, conversation_id)`.
+2. Insert into `tickets`: generated `T-XXXXXXXX` number, title/summary/category/priority from the model (validated against allowed enums), transcript JSON, customer email/phone/language, `internal_reason` (never shown on the widget).
+3. If Resend is configured and the business has `support_email`, send HTML mail (ticket number, priority, category, customer links, summary, reason, transcript). Status on the row: `sent`, `skipped`, or `failed`.
+4. Append the ticket number onto the customer-facing reply and set `chat_closed: true`.
 
-You need Python 3.9+, Node, a Postgres database (for example Neon), an S3 bucket, a Pinecone project, and an OpenAI key. Resend is optional until you want ticket email.
+The next message with that `conversation_id` hits the early exit in step 4 and only repeats “this conversation is closed.”
 
-```bash
-# API
-cd api
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # fill in your own values
-uvicorn app.main:app --reload --port 8000
+Listing tickets is owner-only: `GET /api/v1/businesses/{id}/tickets`.
 
-# Dashboard (another terminal)
-cd web
-npm install
-npm start              # http://localhost:3000, proxies to :8000
-```
+---
 
-`GET /health` should return `{"status":"ok"}`.
+## 6. Isolation, end to end
 
-## Status
+A question for business A cannot read business B’s knowledge even if someone guesses B’s UUID on the widget: CORS and the origin dependency both require B’s website. The dashboard cannot load B’s documents without B’s owner JWT.
 
-Personal project built to demonstrate RAG, multi-tenant isolation, a document indexing pipeline, and an origin-locked public chat surface. Not a hosted product.
-# support-dock
+Vectors are isolated twice: **namespace = business id**, and every query/upsert carries `business_id` (and live `document_id`s) in metadata filters. Chunk text lives in Pinecone metadata so retrieval does not need a second hop to Postgres for the passage.
+
+Original files never go to the model as binaries. Only extracted, chunked text is embedded and later injected as excerpts.

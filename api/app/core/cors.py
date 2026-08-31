@@ -27,7 +27,7 @@ class OriginAwareCORSMiddleware:
         self.max_age = "600"
 
     def origin_allowed(self, origin: str, path: str) -> bool:
-        if origin.rstrip("/") in self.dashboard_origins:
+        if any(origins_match(origin, allowed) for allowed in self.dashboard_origins):
             return True
         business_id = widget_business_id(path)
         if business_id is None:

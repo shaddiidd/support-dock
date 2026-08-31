@@ -12,13 +12,12 @@ export function AssistantPage({ business }) {
 
   useEffect(() => {
     setDraft(business.assistant_instructions || "");
+  }, [business.id, business.assistant_instructions]);
+
+  useEffect(() => {
     setError("");
     setNotice("");
   }, [business.id]);
-
-  useEffect(() => {
-    setDraft(business.assistant_instructions || "");
-  }, [business.assistant_instructions]);
 
   const dirty = draft.trim() !== (business.assistant_instructions || "").trim();
 

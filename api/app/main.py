@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
+    # CORS_ORIGINS = dashboard allowlist. Widget chat uses the business website_origin.
     app.add_middleware(
         OriginAwareCORSMiddleware,
         dashboard_origins=settings.cors_origin_list,
